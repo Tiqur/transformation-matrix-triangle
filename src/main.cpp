@@ -3,7 +3,28 @@
 #include "imgui_impl_opengl3.h"
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
 #include <iostream>
+#include <vector>
+
+std::string vertexShaderSource = R"(
+    #version 330 core
+    layout (location = 0) in vec3 aPos;
+    void main() {
+      gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
+    }
+  )";
+std::string fragmentShaderSource = R"(
+    #version 330 core
+    out vec4 FragColor;
+
+    void main() {
+      FragColor = vec4(0.5f, 0.2f, 0.8f, 1.0f);
+    }
+  )";
+
+std::vector<float> vertices = {-0.5f, -0.5f, 0.0f, 0.5f, -0.5f,
+                               0.0f,  0.0f,  0.5f, 0.0f};
 
 using std::cout, std::endl;
 void framebuffer_size_callback(GLFWwindow *window, int width, int height) {
@@ -15,6 +36,97 @@ void processInput(GLFWwindow *window) {
   if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     glfwSetWindowShouldClose(window, true);
 }
+
+class Shader {
+public:
+  Shader(std::string *shaderSource, GLenum shaderType) {
+    m_id = glCreateShader(shaderType);
+    const char *p = shaderSource->c_str();
+    glShaderSource(m_id, 1, &p, NULL);
+    glCompileShader(m_id);
+    checkErrors();
+  }
+  void checkErrors() {
+    int success;
+    char infoLog[512];
+    glGetShaderiv(m_id, GL_COMPILE_STATUS, &success);
+    if (!success) {
+      glGetShaderInfoLog(m_id, 512, NULL, infoLog);
+      std::cout << "ERROR::SHADER::COMPILATION_FAILED\n"
+                << infoLog << std::endl;
+    };
+  }
+  ~Shader() { glDeleteShader(m_id); }
+  GLuint id() { return m_id; }
+
+private:
+  GLuint m_id{};
+};
+
+class ShaderProgram {
+public:
+  ShaderProgram(Shader &&vertexShader, Shader &&fragmentShader)
+      : m_vertexShader(std::move(vertexShader)),
+        m_fragmentShader(std::move(fragmentShader)) {
+    m_id = glCreateProgram();
+    glAttachShader(m_id, vertexShader.id());
+    glAttachShader(m_id, fragmentShader.id());
+    glLinkProgram(m_id);
+  }
+  void use() { glUseProgram(m_id); }
+  ~ShaderProgram() { glDeleteProgram(m_id); }
+  GLuint id() { return m_id; }
+
+private:
+  GLuint m_id{};
+  Shader m_vertexShader;
+  Shader m_fragmentShader;
+};
+
+class VAO {
+public:
+  VAO() {
+    glGenVertexArrays(1, &m_id);
+    if (m_id == 0) {
+      cout << "Failed to generate Vertex Array Object" << endl;
+      return;
+    }
+  }
+  ~VAO() { glDeleteVertexArrays(1, &m_id); }
+  void setAttribPointer(GLuint index, GLuint size, GLenum type,
+                        GLboolean normalized, GLsizei stride,
+                        const void *pointer) {
+    bind();
+    glVertexAttribPointer(index, size, type, normalized, stride, pointer);
+  }
+  void bind() { glBindVertexArray(m_id); }
+  void unbind() { glBindVertexArray(0); }
+  GLuint id() { return m_id; }
+
+private:
+  GLuint m_id{};
+};
+
+class VBO {
+public:
+  VBO(const std::vector<float> *vertices) {
+    glGenBuffers(1, &m_id);
+    if (m_id == 0) {
+      cout << "Failed to generate Vertex Buffer Object" << endl;
+      return;
+    }
+    bind();
+    glBufferData(GL_ARRAY_BUFFER, vertices->size() * sizeof(float),
+                 vertices->data(), GL_STATIC_DRAW);
+  }
+  ~VBO() { glDeleteBuffers(1, &m_id); }
+  void bind() { glBindBuffer(GL_ARRAY_BUFFER, m_id); }
+  void unbind() { glBindBuffer(GL_ARRAY_BUFFER, 0); }
+  GLuint id() { return m_id; }
+
+private:
+  GLuint m_id{};
+};
 
 int main() {
   // Initialize ImGui
@@ -48,9 +160,6 @@ int main() {
     return -1;
   }
 
-  // Make the OpenGL context current
-  glfwMakeContextCurrent(window);
-
   // Initialize GLEW
   glewExperimental = GL_TRUE; // Ensure GLEW uses modern OpenGL techniques
   if (glewInit() != GLEW_OK) {
@@ -63,6 +172,17 @@ int main() {
 
   // Register the framebuffer size callback
   glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+  Shader vertexShader(&vertexShaderSource, GL_VERTEX_SHADER);
+  Shader fragmentShader(&fragmentShaderSource, GL_FRAGMENT_SHADER);
+  ShaderProgram program(std::move(vertexShader), std::move(fragmentShader));
+
+  VBO vbo(&vertices);
+  VAO vao;
+
+  vao.bind();
+  vao.setAttribPointer(0, 3, GL_FLOAT, false, 3 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(0);
 
   // Main render loop
   while (!glfwWindowShouldClose(window)) {
@@ -78,6 +198,10 @@ int main() {
     // Render ImGui
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+    program.use();
+    glBindVertexArray(vao.id());
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     // Process user input
     processInput(window);

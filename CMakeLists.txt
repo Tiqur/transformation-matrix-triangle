@@ -74,6 +74,9 @@ find_package(GLEW REQUIRED)
 # Find GLFW
 find_package(glfw3 REQUIRED)
 
+# Find GLM
+find_package(glm REQUIRED)
+
 # Include directories for OpenGL, GLEW, GLFW, and ImGui
 include_directories(
     ${OPENGL_INCLUDE_DIRS}
