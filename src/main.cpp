@@ -4,14 +4,17 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <vector>
 
 std::string vertexShaderSource = R"(
     #version 330 core
     layout (location = 0) in vec3 aPos;
+    uniform mat4 transform;
     void main() {
-      gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
+      gl_Position = transform*vec4(aPos.x, aPos.y, aPos.z, 1.0);
     }
   )";
 std::string fragmentShaderSource = R"(
@@ -184,24 +187,48 @@ int main() {
   vao.setAttribPointer(0, 3, GL_FLOAT, false, 3 * sizeof(float), (void *)0);
   glEnableVertexAttribArray(0);
 
+  static float rotateDegreesX = 0.0f;
+  static float rotateDegreesY = 0.0f;
+  static float rotateDegreesZ = 0.0f;
+
   // Main render loop
   while (!glfwWindowShouldClose(window)) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
-    ImGui::ShowDemoWindow();
 
     // Render OpenGL
     glClearColor(0.2f, 0.4f, 0.4f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
+    program.use();
+    GLuint transformLoc = glGetUniformLocation(program.id(), "transform");
+
+    // Reset transformation matrix each frame
+    glm::mat4 trans = glm::mat4(1.0f);
+
+    // Apply rotations in order: Z, Y, X
+    trans = glm::rotate(trans, glm::radians(rotateDegreesZ),
+                        glm::vec3(0.0f, 0.0f, 1.0f));
+    trans = glm::rotate(trans, glm::radians(rotateDegreesY),
+                        glm::vec3(0.0f, 1.0f, 0.0f));
+    trans = glm::rotate(trans, glm::radians(rotateDegreesX),
+                        glm::vec3(1.0f, 0.0f, 0.0f));
+
+    glBindVertexArray(vao.id());
+
+    ImGui::Begin("Triangle Translation Settings");
+    ImGui::SliderFloat("Rotate X", &rotateDegreesX, 0.0f, 360.0f, "%.1f");
+    ImGui::SliderFloat("Rotate Y", &rotateDegreesY, 0.0f, 360.0f, "%.1f");
+    ImGui::SliderFloat("Rotate Z", &rotateDegreesZ, 0.0f, 360.0f, "%.1f");
+    ImGui::End();
+
+    glUniformMatrix4fv(transformLoc, 1, GL_FALSE, glm::value_ptr(trans));
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
     // Render ImGui
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-    program.use();
-    glBindVertexArray(vao.id());
-    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     // Process user input
     processInput(window);
